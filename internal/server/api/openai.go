@@ -504,6 +504,45 @@ type OpenAIModel struct {
 	Type            string        `json:"type,omitempty"`
 }
 
+type CodexModelReasoningLevel struct {
+	Effort      string `json:"effort"`
+	Description string `json:"description"`
+}
+
+type CodexModelTruncationPolicy struct {
+	Mode  string `json:"mode"`
+	Limit int    `json:"limit"`
+}
+
+type CodexModelCatalogEntry struct {
+	Slug                        string                      `json:"slug"`
+	DisplayName                 string                      `json:"display_name"`
+	Description                 string                      `json:"description,omitempty"`
+	DefaultReasoningLevel       string                      `json:"default_reasoning_level,omitempty"`
+	SupportedReasoningLevels    []CodexModelReasoningLevel  `json:"supported_reasoning_levels,omitempty"`
+	ShellType                   string                      `json:"shell_type,omitempty"`
+	Visibility                  string                      `json:"visibility,omitempty"`
+	SupportedInAPI              bool                        `json:"supported_in_api"`
+	Priority                    int                         `json:"priority"`
+	InputModalities             []string                    `json:"input_modalities,omitempty"`
+	ContextWindow               int                         `json:"context_window,omitempty"`
+	MaxContextWindow            int                         `json:"max_context_window,omitempty"`
+	SupportsParallelToolCalls   bool                        `json:"supports_parallel_tool_calls"`
+	SupportsReasoningSummaries  bool                        `json:"supports_reasoning_summaries"`
+	DefaultReasoningSummary     string                      `json:"default_reasoning_summary,omitempty"`
+	DefaultVerbosity            string                      `json:"default_verbosity,omitempty"`
+	SupportVerbosity            bool                        `json:"support_verbosity"`
+	TruncationPolicy            *CodexModelTruncationPolicy `json:"truncation_policy,omitempty"`
+	AdditionalSpeedTiers        []string                    `json:"additional_speed_tiers,omitempty"`
+	Upgrade                     any                         `json:"upgrade"`
+	SupportsImageDetailOriginal bool                        `json:"supports_image_detail_original"`
+	SupportsSearchTool          bool                        `json:"supports_search_tool"`
+	ApplyPatchToolType          string                      `json:"apply_patch_tool_type,omitempty"`
+	WebSearchToolType           string                      `json:"web_search_tool_type,omitempty"`
+	ExperimentalSupportedTools  []string                    `json:"experimental_supported_tools,omitempty"`
+	EffectiveContextWindowPct   int                         `json:"effective_context_window_percent,omitempty"`
+}
+
 const (
 	openAIModelObjectType         = "model"
 	openAIErrorCodeInternalServer = "internal_server_error"
@@ -553,6 +592,68 @@ func convertModelFacadeToOpenAIModel(m biz.ModelFacade) OpenAIModel {
 		Object:  openAIModelObjectType,
 		Created: m.Created,
 		OwnedBy: m.OwnedBy,
+	}
+}
+
+func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelCatalogEntry {
+	return lo.Map(openaiModels, func(m OpenAIModel, index int) CodexModelCatalogEntry {
+		displayName := m.Name
+		if displayName == "" {
+			displayName = m.ID
+		}
+
+		inputModalities := []string{"text"}
+		if m.Modalities != nil && len(m.Modalities.Input) > 0 {
+			inputModalities = m.Modalities.Input
+		}
+
+		contextWindow := m.ContextLength
+		if contextWindow == 0 {
+			contextWindow = 250000
+		}
+
+		description := m.Description
+		if description == "" {
+			description = displayName
+		}
+
+		return CodexModelCatalogEntry{
+			Slug:                       m.ID,
+			DisplayName:                displayName,
+			Description:                description,
+			DefaultReasoningLevel:      "medium",
+			SupportedReasoningLevels:   defaultCodexReasoningLevels(),
+			ShellType:                  "shell_command",
+			Visibility:                 "list",
+			SupportedInAPI:             true,
+			Priority:                   index,
+			InputModalities:            inputModalities,
+			ContextWindow:              contextWindow,
+			SupportsParallelToolCalls:  true,
+			SupportsReasoningSummaries: true,
+			DefaultReasoningSummary:    "none",
+			DefaultVerbosity:           "low",
+			SupportVerbosity:           true,
+			TruncationPolicy: &CodexModelTruncationPolicy{
+				Mode:  "tokens",
+				Limit: 10000,
+			},
+			AdditionalSpeedTiers:        []string{"fast"},
+			Upgrade:                     nil,
+			SupportsImageDetailOriginal: true,
+			SupportsSearchTool:          true,
+			ApplyPatchToolType:          "apply_patch",
+			WebSearchToolType:           "web_search",
+		}
+	})
+}
+
+func defaultCodexReasoningLevels() []CodexModelReasoningLevel {
+	return []CodexModelReasoningLevel{
+		{Effort: "low", Description: "Fast responses with lighter reasoning"},
+		{Effort: "medium", Description: "Balances speed and reasoning depth for everyday tasks"},
+		{Effort: "high", Description: "Greater reasoning depth for complex problems"},
+		{Effort: "xhigh", Description: "Extra high reasoning depth for complex problems"},
 	}
 }
 
@@ -767,6 +868,7 @@ func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"object": "list",
 			"data":   []OpenAIModel{},
+			"models": []CodexModelCatalogEntry{},
 		})
 
 		return
@@ -809,5 +911,6 @@ func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
 		"data":   openaiModels,
+		"models": convertOpenAIModelsToCodexCatalog(openaiModels),
 	})
 }

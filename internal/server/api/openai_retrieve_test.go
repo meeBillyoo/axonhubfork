@@ -353,11 +353,18 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var got struct {
-		Data []OpenAIModel `json:"data"`
+		Data   []OpenAIModel            `json:"data"`
+		Models []CodexModelCatalogEntry `json:"models"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
 	require.Len(t, got.Data, 1)
 	require.Equal(t, "gpt-4.1", got.Data[0].ID)
+	require.Len(t, got.Models, 1)
+	require.Equal(t, "gpt-4.1", got.Models[0].Slug)
+	require.Equal(t, "gpt-4.1", got.Models[0].DisplayName)
+	require.True(t, got.Models[0].SupportedInAPI)
+	require.Equal(t, "list", got.Models[0].Visibility)
+	require.NotEmpty(t, got.Models[0].SupportedReasoningLevels)
 	require.Empty(t, got.Data[0].Name)
 	require.Nil(t, got.Data[0].Capabilities)
 	require.Nil(t, got.Data[0].Pricing)
