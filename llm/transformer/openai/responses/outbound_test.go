@@ -905,6 +905,45 @@ func TestOutboundTransformer_TransformRequest(t *testing.T) {
 			},
 		},
 		{
+			name: "codex responses lite forces serial tool calls",
+			chatReq: &llm.Request{
+				Model:             "gpt-5.6-sol",
+				ParallelToolCalls: lo.ToPtr(true),
+				TransformerMetadata: map[string]any{
+					"reasoning_context": "all_turns",
+				},
+				Messages: []llm.Message{
+					{
+						Role: "user",
+						Content: llm.MessageContent{
+							Content: lo.ToPtr("Hello"),
+						},
+					},
+				},
+				Tools: []llm.Tool{
+					{
+						Type: "function",
+						Function: llm.Function{
+							Name:        "test_function",
+							Description: "Test function",
+							Parameters:  []byte(`{"type":"object","properties":{}}`),
+						},
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *httpclient.Request, chatReq *llm.Request) {
+				var req Request
+
+				err := json.Unmarshal(result.Body, &req)
+				require.NoError(t, err)
+				require.NotNil(t, req.ParallelToolCalls)
+				require.False(t, *req.ParallelToolCalls)
+				require.NotNil(t, req.Reasoning)
+				require.Equal(t, "all_turns", req.Reasoning.Context)
+			},
+		},
+		{
 			name: "request with parallel tool calls but no tools",
 			chatReq: &llm.Request{
 				Model:             "gpt-4o",

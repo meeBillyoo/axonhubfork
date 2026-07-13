@@ -366,6 +366,8 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 	require.Equal(t, "list", got.Models[0].Visibility)
 	require.Equal(t, 250000, got.Models[0].ContextWindow)
 	require.Equal(t, 250000, got.Models[0].MaxContextWindow)
+	require.False(t, got.Models[0].SupportsParallelToolCalls)
+	require.Equal(t, "freeform", got.Models[0].ApplyPatchToolType)
 	require.NotEmpty(t, got.Models[0].SupportedReasoningLevels)
 	require.Empty(t, got.Data[0].Name)
 	require.Nil(t, got.Data[0].Capabilities)

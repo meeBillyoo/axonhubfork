@@ -277,6 +277,11 @@ func (t *OutboundTransformer) TransformRequest(ctx context.Context, llmReq *llm.
 		}
 	}
 
+	// Codex Responses Lite uses reasoning.context and requires serial tool calls.
+	if xmap.GetStringPtr(llmReq.TransformerMetadata, "reasoning_context") != nil {
+		payload.ParallelToolCalls = lo.ToPtr(false)
+	}
+
 	// Clear `parallel_tool_calls` when no tools are sent (Responses API compatibility).
 	if len(payload.Tools) == 0 {
 		payload.ParallelToolCalls = nil
