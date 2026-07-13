@@ -605,7 +605,12 @@ func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelC
 
 		inputModalities := []string{"text"}
 		if m.Modalities != nil && len(m.Modalities.Input) > 0 {
-			inputModalities = m.Modalities.Input
+			inputModalities = lo.Filter(m.Modalities.Input, func(item string, _ int) bool {
+				return item == "text" || item == "image"
+			})
+			if len(inputModalities) == 0 {
+				inputModalities = []string{"text"}
+			}
 		}
 
 		contextWindow := m.ContextLength

@@ -378,6 +378,21 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 	require.Nil(t, got.Data[0].Modalities)
 }
 
+func TestConvertOpenAIModelsToCodexCatalog_FiltersUnsupportedInputModalities(t *testing.T) {
+	catalog := convertOpenAIModelsToCodexCatalog([]OpenAIModel{
+		{
+			ID:   "gpt-5.6-sol",
+			Name: "GPT-5.6 sol",
+			Modalities: &Modalities{
+				Input: []string{"text", "image", "pdf"},
+			},
+		},
+	})
+
+	require.Len(t, catalog, 1)
+	require.Equal(t, []string{"text", "image"}, catalog[0].InputModalities)
+}
+
 func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *testing.T) {
 	client, channelSvc, systemSvc, router, ctx := setupOpenAIRetrieveTest(t)
 
