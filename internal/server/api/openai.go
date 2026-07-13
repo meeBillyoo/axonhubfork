@@ -525,6 +525,7 @@ type CodexModelCatalogEntry struct {
 	SupportedInAPI              bool                        `json:"supported_in_api"`
 	Priority                    int                         `json:"priority"`
 	InputModalities             []string                    `json:"input_modalities,omitempty"`
+	BaseInstructions            string                      `json:"base_instructions"`
 	ContextWindow               int                         `json:"context_window,omitempty"`
 	MaxContextWindow            int                         `json:"max_context_window,omitempty"`
 	SupportsParallelToolCalls   bool                        `json:"supports_parallel_tool_calls"`
@@ -628,6 +629,7 @@ func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelC
 			SupportedInAPI:             true,
 			Priority:                   index,
 			InputModalities:            inputModalities,
+			BaseInstructions:           "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.",
 			ContextWindow:              contextWindow,
 			MaxContextWindow:           contextWindow,
 			SupportsParallelToolCalls:  false,
