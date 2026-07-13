@@ -149,8 +149,8 @@ func (t *OutboundTransformer) TransformRequest(ctx context.Context, llmReq *llm.
 
 	reqCopy.Store = lo.ToPtr(false)
 
-	// Codex recommends parallel tool calls.
-	reqCopy.ParallelToolCalls = lo.ToPtr(true)
+	// Codex Responses Lite requires serial tool calls.
+	reqCopy.ParallelToolCalls = lo.ToPtr(false)
 
 	if reqCopy.TransformerMetadata == nil {
 		reqCopy.TransformerMetadata = map[string]any{}

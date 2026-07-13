@@ -441,7 +441,7 @@ func TestCodexOutbound_PreservesMinimalCompatTransforms(t *testing.T) {
 	assert.Equal(t, false, body["store"])
 	assert.Equal(t, true, body["stream"])
 	assert.NotContains(t, body, "max_output_tokens")
-	assert.Equal(t, true, body["parallel_tool_calls"])
+	assert.Equal(t, false, body["parallel_tool_calls"])
 	assert.Equal(t, topP, body["top_p"])
 	assert.Equal(t, serviceTier, body["service_tier"])
 	assert.NotContains(t, body, "metadata")
@@ -480,7 +480,7 @@ func TestCodexOutbound_AppliesReasoningDefaultsWhenMissing(t *testing.T) {
 	reasoning, ok := body["reasoning"].(map[string]any)
 	require.True(t, ok)
 
-	assert.Equal(t, true, body["parallel_tool_calls"])
+	assert.Equal(t, false, body["parallel_tool_calls"])
 	assert.Equal(t, []any{"reasoning.encrypted_content"}, body["include"])
 	assert.Equal(t, "auto", reasoning["summary"])
 	assert.Equal(t, "all_turns", reasoning["context"])
