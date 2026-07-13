@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/looplj/axonhub/internal/log"
@@ -107,11 +108,42 @@ func applyPassThroughRequestBody(outbound *PersistentOutboundTransformer, system
 			return request, nil
 		}
 
+		body, err = applyPassThroughResponsesCompat(body, request)
+		if err != nil {
+			log.Warn(ctx, "failed to apply pass-through responses compatibility, keeping outbound body",
+				log.String("channel", channel.Name),
+				log.Int("channel_id", channel.ID),
+				log.Cause(err),
+			)
+
+			return request, nil
+		}
+
 		request.Body = body
 		outbound.state.PassThroughApplied = true
 
 		return request, nil
 	})
+}
+
+func applyPassThroughResponsesCompat(body []byte, request *httpclient.Request) ([]byte, error) {
+	if request == nil || request.APIFormat != string(llm.APIFormatOpenAIResponse) {
+		return body, nil
+	}
+
+	transformedForcesSerialTools := gjson.GetBytes(request.Body, "parallel_tool_calls").Exists() &&
+		!gjson.GetBytes(request.Body, "parallel_tool_calls").Bool()
+	rawHasCodexReasoningContext := gjson.GetBytes(body, "reasoning.context").String() != ""
+	if !transformedForcesSerialTools && !rawHasCodexReasoningContext {
+		return body, nil
+	}
+
+	nextBody, err := sjson.SetBytes(body, "parallel_tool_calls", false)
+	if err != nil {
+		return nil, fmt.Errorf("set responses parallel_tool_calls in pass-through body: %w", err)
+	}
+
+	return nextBody, nil
 }
 
 func mergePassThroughRequestBody(rawBody []byte, apiFormat llm.APIFormat, model string) ([]byte, error) {

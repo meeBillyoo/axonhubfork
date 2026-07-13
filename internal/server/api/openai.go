@@ -644,7 +644,7 @@ func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelC
 			SupportsImageDetailOriginal: true,
 			SupportsSearchTool:          true,
 			ApplyPatchToolType:          "freeform",
-			WebSearchToolType:           "web_search",
+			WebSearchToolType:           "text",
 			EffectiveContextWindowPct:   100,
 		}
 	})

@@ -1358,6 +1358,19 @@ func TestMergePassThroughBodySkipsFormatsWithoutTopLevelModel(t *testing.T) {
 	require.Equal(t, string(rawBody), string(merged))
 }
 
+func TestApplyPassThroughResponsesCompatForcesSerialToolCalls(t *testing.T) {
+	rawBody := []byte(`{"model":"gpt-5.6-sol","parallel_tool_calls":true,"reasoning":{"context":"all_turns"},"tools":[{"type":"function","name":"shell"}]}`)
+	request := &httpclient.Request{
+		APIFormat: string(llm.APIFormatOpenAIResponse),
+		Body:      []byte(`{"model":"gpt-5.6-sol","parallel_tool_calls":false,"reasoning":{"context":"all_turns"},"tools":[{"type":"function","name":"shell"}]}`),
+	}
+
+	merged, err := applyPassThroughResponsesCompat(rawBody, request)
+	require.NoError(t, err)
+	require.False(t, gjson.GetBytes(merged, "parallel_tool_calls").Bool())
+	require.Equal(t, "all_turns", gjson.GetBytes(merged, "reasoning.context").String())
+}
+
 // TestApplyUserAgentPassThrough tests the User-Agent pass-through middleware.
 func TestApplyUserAgentPassThrough(t *testing.T) {
 	tests := []struct {
