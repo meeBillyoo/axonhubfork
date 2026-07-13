@@ -540,7 +540,7 @@ type CodexModelCatalogEntry struct {
 	SupportsSearchTool          bool                        `json:"supports_search_tool"`
 	ApplyPatchToolType          string                      `json:"apply_patch_tool_type,omitempty"`
 	WebSearchToolType           string                      `json:"web_search_tool_type,omitempty"`
-	ExperimentalSupportedTools  []string                    `json:"experimental_supported_tools,omitempty"`
+	ExperimentalSupportedTools  []string                    `json:"experimental_supported_tools"`
 	EffectiveContextWindowPct   int                         `json:"effective_context_window_percent,omitempty"`
 }
 
@@ -647,6 +647,7 @@ func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelC
 			SupportsSearchTool:          true,
 			ApplyPatchToolType:          "freeform",
 			WebSearchToolType:           "text",
+			ExperimentalSupportedTools:  []string{},
 			EffectiveContextWindowPct:   100,
 		}
 	})

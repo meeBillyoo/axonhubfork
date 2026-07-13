@@ -370,6 +370,7 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 	require.False(t, got.Models[0].SupportsParallelToolCalls)
 	require.Equal(t, "freeform", got.Models[0].ApplyPatchToolType)
 	require.Equal(t, "text", got.Models[0].WebSearchToolType)
+	require.NotNil(t, got.Models[0].ExperimentalSupportedTools)
 	require.NotEmpty(t, got.Models[0].SupportedReasoningLevels)
 	require.Empty(t, got.Data[0].Name)
 	require.Nil(t, got.Data[0].Capabilities)
