@@ -364,6 +364,8 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 	require.Equal(t, "gpt-4.1", got.Models[0].DisplayName)
 	require.True(t, got.Models[0].SupportedInAPI)
 	require.Equal(t, "list", got.Models[0].Visibility)
+	require.Equal(t, 250000, got.Models[0].ContextWindow)
+	require.Equal(t, 250000, got.Models[0].MaxContextWindow)
 	require.NotEmpty(t, got.Models[0].SupportedReasoningLevels)
 	require.Empty(t, got.Data[0].Name)
 	require.Nil(t, got.Data[0].Capabilities)

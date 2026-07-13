@@ -171,6 +171,10 @@ func (t *OutboundTransformer) TransformRequest(ctx context.Context, llmReq *llm.
 			// Enable reasoning summary for Codex CLI requests.
 			reqCopy.ReasoningSummary = lo.ToPtr("auto")
 		}
+
+		if _, ok := reqCopy.TransformerMetadata["reasoning_context"]; !ok {
+			reqCopy.TransformerMetadata["reasoning_context"] = "all_turns"
+		}
 	}
 
 	// Codex Responses rejects token limit fields, so strip them out.

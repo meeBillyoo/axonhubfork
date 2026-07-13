@@ -780,6 +780,15 @@ func TestConvertReasoning(t *testing.T) {
 				Summary: "concise",
 			},
 		},
+		{
+			name: "with context specified",
+			req: &llm.Request{
+				TransformerMetadata: map[string]any{"reasoning_context": "all_turns"},
+			},
+			expected: &Reasoning{
+				Context: "all_turns",
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -222,6 +222,7 @@ func TestInboundTransformer_TransformRequest(t *testing.T) {
 					"input": "Solve this problem",
 					"reasoning": {
 						"effort": "high",
+						"context": "all_turns",
 						"max_tokens": 5000
 					}
 				}`),
@@ -231,6 +232,8 @@ func TestInboundTransformer_TransformRequest(t *testing.T) {
 				require.Equal(t, "high", result.ReasoningEffort)
 				require.NotNil(t, result.ReasoningBudget)
 				require.Equal(t, int64(5000), *result.ReasoningBudget)
+				require.NotNil(t, result.TransformerMetadata)
+				require.Equal(t, "all_turns", result.TransformerMetadata["reasoning_context"])
 			},
 		},
 		{

@@ -629,6 +629,7 @@ func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelC
 			Priority:                   index,
 			InputModalities:            inputModalities,
 			ContextWindow:              contextWindow,
+			MaxContextWindow:           contextWindow,
 			SupportsParallelToolCalls:  true,
 			SupportsReasoningSummaries: true,
 			DefaultReasoningSummary:    "none",
@@ -644,6 +645,7 @@ func convertOpenAIModelsToCodexCatalog(openaiModels []OpenAIModel) []CodexModelC
 			SupportsSearchTool:          true,
 			ApplyPatchToolType:          "apply_patch",
 			WebSearchToolType:           "web_search",
+			EffectiveContextWindowPct:   100,
 		}
 	})
 }

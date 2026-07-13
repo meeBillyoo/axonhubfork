@@ -450,6 +450,7 @@ func TestCodexOutbound_PreservesMinimalCompatTransforms(t *testing.T) {
 	reasoning, ok := body["reasoning"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, reasoningSummary, reasoning["summary"])
+	assert.Equal(t, "all_turns", reasoning["context"])
 
 	assert.NotContains(t, string(hreq.Body), "You are a coding agent running in the Codex CLI")
 	assert.NotContains(t, string(hreq.Body), "You are Codex")
@@ -482,7 +483,30 @@ func TestCodexOutbound_AppliesReasoningDefaultsWhenMissing(t *testing.T) {
 	assert.Equal(t, true, body["parallel_tool_calls"])
 	assert.Equal(t, []any{"reasoning.encrypted_content"}, body["include"])
 	assert.Equal(t, "auto", reasoning["summary"])
+	assert.Equal(t, "all_turns", reasoning["context"])
 	assert.NotContains(t, body, "metadata")
+}
+
+func TestCodexOutbound_PreservesReasoningContext(t *testing.T) {
+	ctx := context.Background()
+	outbound := newTestCodexOutbound(t)
+
+	hreq, err := outbound.TransformRequest(ctx, &llm.Request{
+		Model: "gpt-5-codex",
+		Messages: []llm.Message{{
+			Role:    "user",
+			Content: llm.MessageContent{Content: lo.ToPtr("Hello")},
+		}},
+		TransformerMetadata: map[string]any{
+			"reasoning_context": "all_turns",
+		},
+	})
+	require.NoError(t, err)
+
+	body := decodeCodexRequestBody(t, hreq)
+	reasoning, ok := body["reasoning"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "all_turns", reasoning["context"])
 }
 
 func TestCodexOutbound_ForcesArrayInputsForSingleMessage(t *testing.T) {

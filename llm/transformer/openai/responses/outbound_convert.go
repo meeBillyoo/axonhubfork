@@ -507,13 +507,15 @@ func convertReasoning(req *llm.Request) *Reasoning {
 	// Check if any reasoning-related fields are present
 	hasReasoningFields := req.ReasoningEffort != "" ||
 		req.ReasoningBudget != nil ||
-		req.ReasoningSummary != nil
+		req.ReasoningSummary != nil ||
+		xmap.GetStringPtr(req.TransformerMetadata, "reasoning_context") != nil
 	if !hasReasoningFields {
 		return nil
 	}
 
 	reasoning := &Reasoning{
 		Effort:    req.ReasoningEffort,
+		Context:   lo.FromPtr(xmap.GetStringPtr(req.TransformerMetadata, "reasoning_context")),
 		MaxTokens: req.ReasoningBudget,
 	}
 
