@@ -22,10 +22,11 @@ func (t *InboundTransformer) TransformStream(
 	stream streams.Stream[*llm.Response],
 ) (streams.Stream[*httpclient.StreamEvent], error) {
 	return &responsesInboundStream{
-		source:              stream,
-		ctx:                 ctx,
-		toolCalls:           make(map[int]*llm.ToolCall),
-		transformerMetadata: make(map[string]any),
+		source:                   stream,
+		ctx:                      ctx,
+		toolCalls:                make(map[int]*llm.ToolCall),
+		transformerMetadata:      make(map[string]any),
+		emittedWebSearchCallKeys: make(map[string]bool),
 	}, nil
 }
 
@@ -74,6 +75,9 @@ type responsesInboundStream struct {
 	usage               *llm.Usage
 	aggregator          *streamAggregator
 	transformerMetadata map[string]any
+	// Tracks web_search_call items already emitted from transformer metadata so repeated
+	// metadata snapshots do not duplicate stream output items.
+	emittedWebSearchCallKeys map[string]bool
 
 	// Event queue
 	eventQueue []*httpclient.StreamEvent
@@ -131,10 +135,6 @@ func (s *responsesInboundStream) Next() bool {
 			if s.usage != nil {
 				response.Usage = ConvertLLMUsageToResponsesUsage(s.usage)
 			}
-			if calls := getResponseWebSearchCallsFromMetadata(s.transformerMetadata); len(calls) > 0 {
-				response.Output = append(append([]Item(nil), calls...), response.Output...)
-			}
-
 			if err := s.enqueueEvent(&StreamEvent{
 				Type:     StreamEventTypeResponseCompleted,
 				Response: response,
@@ -199,10 +199,6 @@ func (s *responsesInboundStream) Next() bool {
 		s.usage = chunk.Usage
 	}
 
-	if len(chunk.TransformerMetadata) > 0 {
-		s.mergeTransformerMetadata(chunk.TransformerMetadata)
-	}
-
 	// Generate response.created event if this is the first chunk
 	if !s.hasResponseCreated {
 		s.hasResponseCreated = true
@@ -235,6 +231,13 @@ func (s *responsesInboundStream) Next() bool {
 		})
 		if err != nil {
 			s.err = fmt.Errorf("failed to enqueue response.in_progress event: %w", err)
+			return false
+		}
+	}
+
+	if len(chunk.TransformerMetadata) > 0 {
+		if err := s.mergeTransformerMetadata(chunk.TransformerMetadata); err != nil {
+			s.err = err
 			return false
 		}
 	}
@@ -309,10 +312,6 @@ func (s *responsesInboundStream) Next() bool {
 		s.aggregator.status = "completed"
 		response := s.aggregator.buildResponse()
 		response.Usage = ConvertLLMUsageToResponsesUsage(s.usage)
-		if calls := getResponseWebSearchCallsFromMetadata(s.transformerMetadata); len(calls) > 0 {
-			response.Output = append(append([]Item(nil), calls...), response.Output...)
-		}
-
 		err := s.enqueueEvent(&StreamEvent{
 			Type:     StreamEventTypeResponseCompleted,
 			Response: response,
@@ -327,16 +326,96 @@ func (s *responsesInboundStream) Next() bool {
 	return s.Next()
 }
 
-func (s *responsesInboundStream) mergeTransformerMetadata(metadata map[string]any) {
+func (s *responsesInboundStream) mergeTransformerMetadata(metadata map[string]any) error {
 	if len(metadata) == 0 {
-		return
+		return nil
 	}
 
 	if calls := getResponseWebSearchCallsFromMetadata(metadata); len(calls) > 0 {
 		existingCalls := getResponseWebSearchCallsFromMetadata(s.transformerMetadata)
 		mergedCalls := append(existingCalls, calls...)
 		s.transformerMetadata[responsesWebSearchCallsTransformerMetadataKey] = mergedCalls
+		if err := s.emitWebSearchCalls(calls); err != nil {
+			return err
+		}
 	}
+
+	return nil
+}
+
+func (s *responsesInboundStream) emitWebSearchCalls(calls []Item) error {
+	for idx := range calls {
+		call := calls[idx]
+		key := webSearchCallDedupeKey(call, idx)
+		if s.emittedWebSearchCallKeys[key] {
+			continue
+		}
+
+		if err := s.closeOpenMessageOrReasoningItems(); err != nil {
+			return err
+		}
+		s.emittedWebSearchCallKeys[key] = true
+
+		if call.ID == "" {
+			call.ID = generateItemID()
+		}
+		if call.Type == "" {
+			call.Type = "web_search_call"
+		}
+
+		addedItem := call
+		addedItem.Status = lo.ToPtr("in_progress")
+		if err := s.enqueueEvent(&StreamEvent{
+			Type:        StreamEventTypeOutputItemAdded,
+			OutputIndex: s.outputIndex,
+			Item:        &addedItem,
+		}); err != nil {
+			return fmt.Errorf("failed to enqueue web_search_call output_item.added event: %w", err)
+		}
+
+		doneItem := call
+		doneItem.Status = lo.ToPtr("completed")
+		if err := s.enqueueEvent(&StreamEvent{
+			Type:        StreamEventTypeOutputItemDone,
+			OutputIndex: s.outputIndex,
+			Item:        &doneItem,
+		}); err != nil {
+			return fmt.Errorf("failed to enqueue web_search_call output_item.done event: %w", err)
+		}
+
+		s.outputIndex++
+	}
+
+	return nil
+}
+
+func (s *responsesInboundStream) closeOpenMessageOrReasoningItems() error {
+	if s.hasMessageItemStarted {
+		if err := s.closeMessageItem(); err != nil {
+			return err
+		}
+	}
+
+	if s.hasReasoningItemStarted {
+		if err := s.closeReasoningItem(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func webSearchCallDedupeKey(call Item, fallbackIndex int) string {
+	if call.ID != "" {
+		return call.ID
+	}
+
+	data, err := json.Marshal(call)
+	if err != nil || len(data) == 0 {
+		return fmt.Sprintf("web_search_call:%d", fallbackIndex)
+	}
+
+	return string(data)
 }
 
 func getResponsesReasoningItemMetadata(metadata map[string]any) (responsesReasoningItemMetadata, bool) {

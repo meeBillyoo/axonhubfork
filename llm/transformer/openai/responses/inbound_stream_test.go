@@ -245,18 +245,6 @@ func TestInboundTransformer_TransformStream_PreservesWebSearchCallsFromChunkMeta
 			ID:      "resp_stream_web_search_no_annotations",
 			Created: 1700000000,
 			Model:   "gpt-4o-search-preview",
-			Choices: []llm.Choice{{
-				Index: 0,
-				Delta: &llm.Message{
-					Content: llm.MessageContent{Content: lo.ToPtr("Search result without inline citations")},
-				},
-			}},
-		},
-		{
-			Object:  "chat.completion.chunk",
-			ID:      "resp_stream_web_search_no_annotations",
-			Created: 1700000000,
-			Model:   "gpt-4o-search-preview",
 			TransformerMetadata: map[string]any{
 				responsesWebSearchCallsTransformerMetadataKey: []Item{{
 					ID:     "ws_456",
@@ -273,6 +261,24 @@ func TestInboundTransformer_TransformStream_PreservesWebSearchCallsFromChunkMeta
 					}),
 				}},
 			},
+		},
+		{
+			Object:  "chat.completion.chunk",
+			ID:      "resp_stream_web_search_no_annotations",
+			Created: 1700000000,
+			Model:   "gpt-4o-search-preview",
+			Choices: []llm.Choice{{
+				Index: 0,
+				Delta: &llm.Message{
+					Content: llm.MessageContent{Content: lo.ToPtr("Search result without inline citations")},
+				},
+			}},
+		},
+		{
+			Object:  "chat.completion.chunk",
+			ID:      "resp_stream_web_search_no_annotations",
+			Created: 1700000000,
+			Model:   "gpt-4o-search-preview",
 			Choices: []llm.Choice{{
 				Index:        0,
 				FinishReason: lo.ToPtr("stop"),
@@ -298,6 +304,28 @@ func TestInboundTransformer_TransformStream_PreservesWebSearchCallsFromChunkMeta
 	}
 	require.NoError(t, stream.Err())
 	require.NotEmpty(t, actualEvents)
+
+	var webSearchAdded, webSearchDone *StreamEvent
+	for idx := range actualEvents {
+		event := &actualEvents[idx]
+		if event.Item == nil || event.Item.Type != "web_search_call" {
+			continue
+		}
+
+		switch event.Type {
+		case StreamEventTypeOutputItemAdded:
+			webSearchAdded = event
+		case StreamEventTypeOutputItemDone:
+			webSearchDone = event
+		}
+	}
+
+	require.NotNil(t, webSearchAdded)
+	require.Equal(t, 0, webSearchAdded.OutputIndex)
+	require.Equal(t, "in_progress", lo.FromPtr(webSearchAdded.Item.Status))
+	require.NotNil(t, webSearchDone)
+	require.Equal(t, 0, webSearchDone.OutputIndex)
+	require.Equal(t, "completed", lo.FromPtr(webSearchDone.Item.Status))
 
 	lastEvent := actualEvents[len(actualEvents)-1]
 	require.Equal(t, StreamEventTypeResponseCompleted, lastEvent.Type)

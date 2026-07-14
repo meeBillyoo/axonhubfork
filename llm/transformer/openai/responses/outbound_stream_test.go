@@ -341,7 +341,7 @@ func TestOutboundTransformer_TransformStream_PreservesFinalItemAnnotations(t *te
 	require.EqualValues(t, 6, *found[0].EndIndex)
 }
 
-func TestOutboundTransformer_TransformStream_PreservesWebSearchMetadataOnAnnotationChunk(t *testing.T) {
+func TestOutboundTransformer_TransformStream_EmitsWebSearchMetadataBeforeAnnotationChunk(t *testing.T) {
 	trans, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
 	require.NoError(t, err)
 
@@ -424,10 +424,16 @@ func TestOutboundTransformer_TransformStream_PreservesWebSearchMetadataOnAnnotat
 	require.NoError(t, err)
 	require.NotEmpty(t, actual)
 
+	var metadataChunk *llm.Response
 	var annotationChunk *llm.Response
 	for _, resp := range actual {
 		if resp == llm.DoneResponse {
 			continue
+		}
+		if resp.TransformerMetadata != nil {
+			if _, ok := resp.TransformerMetadata[responsesWebSearchCallsTransformerMetadataKey]; ok && metadataChunk == nil {
+				metadataChunk = resp
+			}
 		}
 		for _, choice := range resp.Choices {
 			if choice.Delta != nil && len(choice.Delta.Annotations) > 0 {
@@ -435,16 +441,17 @@ func TestOutboundTransformer_TransformStream_PreservesWebSearchMetadataOnAnnotat
 				break
 			}
 		}
-		if annotationChunk != nil {
+		if metadataChunk != nil && annotationChunk != nil {
 			break
 		}
 	}
 
-	require.NotNil(t, annotationChunk)
-	require.NotNil(t, annotationChunk.TransformerMetadata)
-	calls, ok := annotationChunk.TransformerMetadata[responsesWebSearchCallsTransformerMetadataKey]
+	require.NotNil(t, metadataChunk)
+	calls, ok := metadataChunk.TransformerMetadata[responsesWebSearchCallsTransformerMetadataKey]
 	require.True(t, ok)
 	require.NotNil(t, calls)
+	require.NotNil(t, annotationChunk)
+	require.Nil(t, annotationChunk.TransformerMetadata)
 }
 
 func TestOutboundTransformer_TransformStream_PreservesWebSearchMetadataWithoutAnnotations(t *testing.T) {

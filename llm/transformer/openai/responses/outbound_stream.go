@@ -441,7 +441,11 @@ func (s *responsesOutboundStream) transformStreamChunk(event *httpclient.StreamE
 		}
 		if streamEvent.Item.Type == "web_search_call" {
 			appendResponseWebSearchCallMetadata(s.state.transformerMetadata, *streamEvent.Item)
-			return nil // Intentionally skip this event
+			resp.TransformerMetadata = map[string]any{
+				responsesWebSearchCallsTransformerMetadataKey: []Item{*streamEvent.Item},
+			}
+			s.state.transformerMetadataEmitted = true
+			break
 		}
 		if streamEvent.Item.Type == "reasoning" {
 			if streamEvent.Item.ID == "" {
@@ -481,7 +485,7 @@ func (s *responsesOutboundStream) transformStreamChunk(event *httpclient.StreamE
 		if len(msg.Annotations) == 0 {
 			return nil // Intentionally skip this event
 		}
-		if len(s.state.transformerMetadata) > 0 {
+		if len(s.state.transformerMetadata) > 0 && !s.state.transformerMetadataEmitted {
 			resp.TransformerMetadata = s.state.transformerMetadata
 			s.state.transformerMetadataEmitted = true
 		}
