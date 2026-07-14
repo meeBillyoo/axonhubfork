@@ -842,6 +842,39 @@ func getResponseWebSearchCallsFromMetadata(metadata map[string]any) []Item {
 	return result
 }
 
+func getResponsePassthroughOutputItemsFromMetadata(metadata map[string]any) []Item {
+	if len(metadata) == 0 {
+		return nil
+	}
+
+	raw, ok := metadata[responsesPassthroughOutputItemsTransformerMetadataKey]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	items, ok := raw.([]Item)
+	if !ok {
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return nil
+		}
+
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil
+		}
+	}
+
+	result := make([]Item, 0, len(items))
+	for _, item := range items {
+		if !isResponsePassthroughOutputItem(item.Type) {
+			continue
+		}
+		result = append(result, item)
+	}
+
+	return result
+}
+
 func attachAnnotationsToFirstTextItem(items []Item, annotations []llm.Annotation) ([]Item, bool) {
 	if len(items) == 0 || len(annotations) == 0 {
 		return items, false
@@ -886,11 +919,14 @@ func attachAnnotationsToFirstTextItem(items []Item, annotations []llm.Annotation
 // convertToResponsesAPIResponse converts llm.Response to Responses API Response.
 func convertToResponsesAPIResponse(chatResp *llm.Response) *Response {
 	resp := &Response{
-		Object:             "response",
-		ID:                 chatResp.ID,
-		Model:              chatResp.Model,
-		CreatedAt:          chatResp.Created,
-		Output:             append([]Item(nil), getResponseWebSearchCallsFromMetadata(chatResp.TransformerMetadata)...),
+		Object:    "response",
+		ID:        chatResp.ID,
+		Model:     chatResp.Model,
+		CreatedAt: chatResp.Created,
+		Output: append(
+			append([]Item(nil), getResponseWebSearchCallsFromMetadata(chatResp.TransformerMetadata)...),
+			getResponsePassthroughOutputItemsFromMetadata(chatResp.TransformerMetadata)...,
+		),
 		Status:             lo.ToPtr("completed"),
 		PreviousResponseID: chatResp.PreviousResponseID,
 	}

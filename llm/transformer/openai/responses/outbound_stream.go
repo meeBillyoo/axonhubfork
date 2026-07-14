@@ -447,6 +447,14 @@ func (s *responsesOutboundStream) transformStreamChunk(event *httpclient.StreamE
 			s.state.transformerMetadataEmitted = true
 			break
 		}
+		if isResponsePassthroughOutputItem(streamEvent.Item.Type) {
+			appendResponsePassthroughOutputItemMetadata(s.state.transformerMetadata, *streamEvent.Item)
+			resp.TransformerMetadata = map[string]any{
+				responsesPassthroughOutputItemsTransformerMetadataKey: []Item{*streamEvent.Item},
+			}
+			s.state.transformerMetadataEmitted = true
+			break
+		}
 		if streamEvent.Item.Type == "reasoning" {
 			if streamEvent.Item.ID == "" {
 				return nil // Intentionally skip this event

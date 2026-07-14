@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/llm"
@@ -547,6 +548,93 @@ func TestOutboundTransformer_TransformStream_PreservesWebSearchMetadataWithoutAn
 	calls, ok := metadataChunk.TransformerMetadata[responsesWebSearchCallsTransformerMetadataKey]
 	require.True(t, ok)
 	require.NotNil(t, calls)
+}
+
+func TestOutboundTransformer_TransformStream_PreservesToolSearchCallMetadata(t *testing.T) {
+	trans, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+
+	events := []*httpclient.StreamEvent{
+		{
+			Type: "response.created",
+			Data: []byte(`{
+				"type":"response.created",
+				"response":{
+					"id":"resp_stream_tool_search",
+					"object":"response",
+					"created_at":1700000000,
+					"model":"gpt-5.6-sol",
+					"status":"in_progress",
+					"output":[]
+				}
+			}`),
+		},
+		{
+			Type: "response.output_item.added",
+			Data: []byte(`{
+				"type":"response.output_item.added",
+				"output_index":0,
+				"item":{
+					"id":"tsc_123",
+					"type":"tool_search_call",
+					"status":"in_progress"
+				}
+			}`),
+		},
+		{
+			Type: "response.output_item.done",
+			Data: []byte(`{
+				"type":"response.output_item.done",
+				"output_index":0,
+				"item":{
+					"id":"tsc_123",
+					"type":"tool_search_call",
+					"status":"completed"
+				}
+			}`),
+		},
+		{
+			Type: "response.completed",
+			Data: []byte(`{
+				"type":"response.completed",
+				"response":{
+					"id":"resp_stream_tool_search",
+					"object":"response",
+					"created_at":1700000000,
+					"model":"gpt-5.6-sol",
+					"status":"completed",
+					"output":[]
+				}
+			}`),
+		},
+	}
+
+	stream, err := trans.TransformStream(context.Background(), nil, streams.SliceStream(events))
+	require.NoError(t, err)
+
+	actual, err := streams.All(stream)
+	require.NoError(t, err)
+	require.NotEmpty(t, actual)
+
+	var metadataChunk *llm.Response
+	for _, resp := range actual {
+		if resp == llm.DoneResponse {
+			continue
+		}
+		if resp.TransformerMetadata != nil {
+			if _, ok := resp.TransformerMetadata[responsesPassthroughOutputItemsTransformerMetadataKey]; ok {
+				metadataChunk = resp
+				break
+			}
+		}
+	}
+
+	require.NotNil(t, metadataChunk)
+	items := getResponsePassthroughOutputItemsFromMetadata(metadataChunk.TransformerMetadata)
+	require.Len(t, items, 1)
+	require.Equal(t, "tool_search_call", items[0].Type)
+	require.Equal(t, "tsc_123", items[0].ID)
+	require.Equal(t, "completed", lo.FromPtr(items[0].Status))
 }
 
 func TestOutboundTransformer_TransformStream_PreservesPreviousResponseID(t *testing.T) {

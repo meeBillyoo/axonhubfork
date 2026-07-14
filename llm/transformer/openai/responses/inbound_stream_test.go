@@ -342,6 +342,77 @@ func TestInboundTransformer_TransformStream_PreservesWebSearchCallsFromChunkMeta
 	require.Equal(t, "Search result without inline citations", lo.FromPtr(lastEvent.Response.Output[1].Content.Items[0].Text))
 }
 
+func TestInboundTransformer_TransformStream_EmitsPassthroughOutputItemsFromChunkMetadata(t *testing.T) {
+	trans := NewInboundTransformer()
+
+	stream, err := trans.TransformStream(t.Context(), streams.SliceStream([]*llm.Response{
+		{
+			Object:  "chat.completion.chunk",
+			ID:      "resp_stream_tool_search",
+			Created: 1700000000,
+			Model:   "gpt-5.6-sol",
+			TransformerMetadata: map[string]any{
+				responsesPassthroughOutputItemsTransformerMetadataKey: []Item{{
+					ID:     "tsc_123",
+					Type:   "tool_search_call",
+					Status: lo.ToPtr("completed"),
+				}},
+			},
+		},
+		{
+			Object:  "chat.completion.chunk",
+			ID:      "resp_stream_tool_search",
+			Created: 1700000000,
+			Model:   "gpt-5.6-sol",
+			Choices: []llm.Choice{{
+				Index:        0,
+				FinishReason: lo.ToPtr("stop"),
+			}},
+		},
+	}))
+	require.NoError(t, err)
+
+	var actualEvents []StreamEvent
+	for stream.Next() {
+		event := stream.Current()
+		var ev StreamEvent
+		err := json.Unmarshal(event.Data, &ev)
+		require.NoError(t, err)
+		actualEvents = append(actualEvents, ev)
+	}
+	require.NoError(t, stream.Err())
+	require.NotEmpty(t, actualEvents)
+
+	var toolSearchAdded, toolSearchDone *StreamEvent
+	for idx := range actualEvents {
+		event := &actualEvents[idx]
+		if event.Item == nil || event.Item.Type != "tool_search_call" {
+			continue
+		}
+
+		switch event.Type {
+		case StreamEventTypeOutputItemAdded:
+			toolSearchAdded = event
+		case StreamEventTypeOutputItemDone:
+			toolSearchDone = event
+		}
+	}
+
+	require.NotNil(t, toolSearchAdded)
+	require.Equal(t, 0, toolSearchAdded.OutputIndex)
+	require.Equal(t, "in_progress", lo.FromPtr(toolSearchAdded.Item.Status))
+	require.NotNil(t, toolSearchDone)
+	require.Equal(t, 0, toolSearchDone.OutputIndex)
+	require.Equal(t, "completed", lo.FromPtr(toolSearchDone.Item.Status))
+
+	lastEvent := actualEvents[len(actualEvents)-1]
+	require.Equal(t, StreamEventTypeResponseCompleted, lastEvent.Type)
+	require.NotNil(t, lastEvent.Response)
+	require.Len(t, lastEvent.Response.Output, 1)
+	require.Equal(t, "tool_search_call", lastEvent.Response.Output[0].Type)
+	require.Equal(t, "tsc_123", lastEvent.Response.Output[0].ID)
+}
+
 func TestInboundTransformer_TransformStream_EmitsUpstreamErrorEvents(t *testing.T) {
 	tests := []struct {
 		name      string

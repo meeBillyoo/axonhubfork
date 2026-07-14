@@ -520,3 +520,53 @@ func TestResponsesTransformer_WebSearchCallItem_RoundTripIntegration(t *testing.
 	require.Equal(t, "https://example.com/analysis", first.Get("action.sources.1.url").String())
 	require.Equal(t, "Analysis", first.Get("action.sources.1.title").String())
 }
+
+func TestResponsesTransformer_ToolSearchCallItem_RoundTripIntegration(t *testing.T) {
+	outbound, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+
+	inbound := NewInboundTransformer()
+
+	responseData := []byte(`{
+		"object":"response",
+		"id":"resp_tool_search_call_round_trip",
+		"created_at":1784000000,
+		"model":"gpt-5.6-sol",
+		"status":"completed",
+		"output":[
+			{
+				"id":"tsc_07b3eec892ec2d35016a55cfdd444881949b5cb05371b4e1a8",
+				"type":"tool_search_call",
+				"status":"completed"
+			},
+			{
+				"id":"msg_tool_search_call_round_trip",
+				"type":"message",
+				"status":"completed",
+				"role":"assistant",
+				"content":[{"type":"output_text","text":"Tool search completed."}]
+			}
+		],
+		"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}
+	}`)
+
+	httpResp := &httpclient.Response{StatusCode: http.StatusOK, Body: responseData}
+	llmResp, err := outbound.TransformResponse(t.Context(), httpResp)
+	require.NoError(t, err)
+	require.NotNil(t, llmResp)
+	require.Len(t, getResponsePassthroughOutputItemsFromMetadata(llmResp.TransformerMetadata), 1)
+
+	roundTripResp, err := inbound.TransformResponse(t.Context(), llmResp)
+	require.NoError(t, err)
+
+	root := gjson.ParseBytes(roundTripResp.Body)
+	output := root.Get("output")
+	require.True(t, output.Exists())
+	require.Len(t, output.Array(), 2)
+
+	first := output.Array()[0]
+	require.Equal(t, "tool_search_call", first.Get("type").String())
+	require.Equal(t, "tsc_07b3eec892ec2d35016a55cfdd444881949b5cb05371b4e1a8", first.Get("id").String())
+	require.Equal(t, "completed", first.Get("status").String())
+	require.Equal(t, "message", output.Array()[1].Get("type").String())
+}

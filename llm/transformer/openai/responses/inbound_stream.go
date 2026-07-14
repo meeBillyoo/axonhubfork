@@ -22,11 +22,11 @@ func (t *InboundTransformer) TransformStream(
 	stream streams.Stream[*llm.Response],
 ) (streams.Stream[*httpclient.StreamEvent], error) {
 	return &responsesInboundStream{
-		source:                   stream,
-		ctx:                      ctx,
-		toolCalls:                make(map[int]*llm.ToolCall),
-		transformerMetadata:      make(map[string]any),
-		emittedWebSearchCallKeys: make(map[string]bool),
+		source:                        stream,
+		ctx:                           ctx,
+		toolCalls:                     make(map[int]*llm.ToolCall),
+		transformerMetadata:           make(map[string]any),
+		emittedMetadataOutputItemKeys: make(map[string]bool),
 	}, nil
 }
 
@@ -75,9 +75,9 @@ type responsesInboundStream struct {
 	usage               *llm.Usage
 	aggregator          *streamAggregator
 	transformerMetadata map[string]any
-	// Tracks web_search_call items already emitted from transformer metadata so repeated
+	// Tracks output items already emitted from transformer metadata so repeated
 	// metadata snapshots do not duplicate stream output items.
-	emittedWebSearchCallKeys map[string]bool
+	emittedMetadataOutputItemKeys map[string]bool
 
 	// Event queue
 	eventQueue []*httpclient.StreamEvent
@@ -340,21 +340,30 @@ func (s *responsesInboundStream) mergeTransformerMetadata(metadata map[string]an
 		}
 	}
 
+	if items := getResponsePassthroughOutputItemsFromMetadata(metadata); len(items) > 0 {
+		existingItems := getResponsePassthroughOutputItemsFromMetadata(s.transformerMetadata)
+		mergedItems := append(existingItems, items...)
+		s.transformerMetadata[responsesPassthroughOutputItemsTransformerMetadataKey] = mergedItems
+		if err := s.emitPassthroughOutputItems(items); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (s *responsesInboundStream) emitWebSearchCalls(calls []Item) error {
 	for idx := range calls {
 		call := calls[idx]
-		key := webSearchCallDedupeKey(call, idx)
-		if s.emittedWebSearchCallKeys[key] {
+		key := metadataOutputItemDedupeKey(call, idx)
+		if s.emittedMetadataOutputItemKeys[key] {
 			continue
 		}
 
 		if err := s.closeOpenMessageOrReasoningItems(); err != nil {
 			return err
 		}
-		s.emittedWebSearchCallKeys[key] = true
+		s.emittedMetadataOutputItemKeys[key] = true
 
 		if call.ID == "" {
 			call.ID = generateItemID()
@@ -389,6 +398,49 @@ func (s *responsesInboundStream) emitWebSearchCalls(calls []Item) error {
 	return nil
 }
 
+func (s *responsesInboundStream) emitPassthroughOutputItems(items []Item) error {
+	for idx := range items {
+		item := items[idx]
+		key := metadataOutputItemDedupeKey(item, idx)
+		if s.emittedMetadataOutputItemKeys[key] {
+			continue
+		}
+
+		if err := s.closeOpenMessageOrReasoningItems(); err != nil {
+			return err
+		}
+		s.emittedMetadataOutputItemKeys[key] = true
+
+		if item.ID == "" {
+			item.ID = generateItemID()
+		}
+
+		addedItem := item
+		addedItem.Status = lo.ToPtr("in_progress")
+		if err := s.enqueueEvent(&StreamEvent{
+			Type:        StreamEventTypeOutputItemAdded,
+			OutputIndex: s.outputIndex,
+			Item:        &addedItem,
+		}); err != nil {
+			return fmt.Errorf("failed to enqueue passthrough output_item.added event: %w", err)
+		}
+
+		doneItem := item
+		doneItem.Status = lo.ToPtr("completed")
+		if err := s.enqueueEvent(&StreamEvent{
+			Type:        StreamEventTypeOutputItemDone,
+			OutputIndex: s.outputIndex,
+			Item:        &doneItem,
+		}); err != nil {
+			return fmt.Errorf("failed to enqueue passthrough output_item.done event: %w", err)
+		}
+
+		s.outputIndex++
+	}
+
+	return nil
+}
+
 func (s *responsesInboundStream) closeOpenMessageOrReasoningItems() error {
 	if s.hasMessageItemStarted {
 		if err := s.closeMessageItem(); err != nil {
@@ -405,7 +457,7 @@ func (s *responsesInboundStream) closeOpenMessageOrReasoningItems() error {
 	return nil
 }
 
-func webSearchCallDedupeKey(call Item, fallbackIndex int) string {
+func metadataOutputItemDedupeKey(call Item, fallbackIndex int) string {
 	if call.ID != "" {
 		return call.ID
 	}

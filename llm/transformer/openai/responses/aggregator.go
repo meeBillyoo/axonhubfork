@@ -466,8 +466,30 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 			if item == nil {
 				item = a.lastItemByOutputIndex(ev.OutputIndex)
 			}
+			if item == nil {
+				item = newAggregatedItem()
+				a.outputItems[ev.OutputIndex] = append(a.outputItems[ev.OutputIndex], item)
+			}
 
 			if item != nil {
+				if ev.Item.ID != "" {
+					item.ID = ev.Item.ID
+				}
+				if ev.Item.Type != "" {
+					item.Type = ev.Item.Type
+				}
+				if ev.Item.Role != "" {
+					item.Role = ev.Item.Role
+				}
+				if ev.Item.CallID != "" {
+					item.CallID = ev.Item.CallID
+				}
+				if ev.Item.Name != "" {
+					item.Name = ev.Item.Name
+				}
+				if ev.Item.Namespace != "" {
+					item.Namespace = ev.Item.Namespace
+				}
 				if ev.Item.Status != nil {
 					item.Status = *ev.Item.Status
 				}
@@ -513,12 +535,20 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 					item.EncryptedContent = ev.Item.EncryptedContent
 				}
 
+				if ev.Item.Input != nil {
+					item.Input = ev.Item.Input
+				}
+
 				if ev.Item.Result != nil {
 					item.Result = ev.Item.Result
 				}
 
 				if ev.Item.Action != nil {
 					item.Action = ev.Item.Action
+				}
+
+				if item.ID != "" {
+					a.outputItemsByID[item.ID] = item
 				}
 			}
 		}
@@ -707,6 +737,17 @@ func (a *streamAggregator) buildResponse() *Response {
 					Type:   item.Type,
 					Status: lo.ToPtr(item.Status),
 					Action: item.Action,
+				})
+
+			case "tool_search_call":
+				output = append(output, Item{
+					ID:        item.ID,
+					Type:      item.Type,
+					Status:    lo.ToPtr(item.Status),
+					CallID:    item.CallID,
+					Name:      item.Name,
+					Namespace: item.Namespace,
+					Arguments: item.Arguments.String(),
 				})
 
 			default:

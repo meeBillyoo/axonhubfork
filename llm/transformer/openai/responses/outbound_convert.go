@@ -603,6 +603,24 @@ func appendResponseWebSearchCallMetadata(transformerMetadata map[string]any, out
 	transformerMetadata[responsesWebSearchCallsTransformerMetadataKey] = append(existing, call)
 }
 
+func appendResponsePassthroughOutputItemMetadata(transformerMetadata map[string]any, outputItem Item) {
+	if transformerMetadata == nil || !isResponsePassthroughOutputItem(outputItem.Type) {
+		return
+	}
+
+	existing, _ := transformerMetadata[responsesPassthroughOutputItemsTransformerMetadataKey].([]Item)
+	transformerMetadata[responsesPassthroughOutputItemsTransformerMetadataKey] = append(existing, outputItem)
+}
+
+func isResponsePassthroughOutputItem(itemType string) bool {
+	switch itemType {
+	case "tool_search_call":
+		return true
+	default:
+		return false
+	}
+}
+
 // convertOutputToMessage converts Responses API output items into an llm.Message.
 // It aggregates text, reasoning, tool calls, image generation,
 // compaction and compaction_summary items from the response output.
@@ -707,6 +725,8 @@ func convertOutputToMessage(output []Item, transformerMetadata map[string]any) l
 			}
 		case "web_search_call":
 			appendResponseWebSearchCallMetadata(transformerMetadata, outputItem)
+		case "tool_search_call":
+			appendResponsePassthroughOutputItemMetadata(transformerMetadata, outputItem)
 		case "compaction", "compaction_summary":
 			flushText()
 

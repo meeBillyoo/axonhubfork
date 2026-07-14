@@ -423,6 +423,7 @@ type URLCitation struct {
 }
 
 const responsesWebSearchCallsTransformerMetadataKey = "openai_responses_web_search_calls"
+const responsesPassthroughOutputItemsTransformerMetadataKey = "openai_responses_passthrough_output_items"
 const responsesReasoningItemTransformerMetadataKey = "openai_responses_reasoning_item"
 
 type responsesReasoningItemMetadata struct {
