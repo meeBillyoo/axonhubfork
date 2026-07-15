@@ -613,11 +613,17 @@ func appendResponsePassthroughOutputItemMetadata(transformerMetadata map[string]
 }
 
 func isResponsePassthroughOutputItem(itemType string) bool {
-	switch itemType {
-	case "tool_search_call":
-		return true
-	default:
+	if itemType == "" {
 		return false
+	}
+
+	switch itemType {
+	case "message", "function_call", "custom_tool_call", "reasoning", "image_generation_call",
+		"web_search_call", "compaction", "compaction_summary", "input_image", "input_text",
+		"output_text", "text", "refusal":
+		return false
+	default:
+		return true
 	}
 }
 
@@ -754,6 +760,8 @@ func convertOutputToMessage(output []Item, transformerMetadata map[string]any) l
 					},
 				})
 			}
+		default:
+			appendResponsePassthroughOutputItemMetadata(transformerMetadata, outputItem)
 		}
 	}
 

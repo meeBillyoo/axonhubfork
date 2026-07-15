@@ -586,20 +586,66 @@ type Item struct {
 	// Compaction fields (for type="compaction")
 	// The identifier of the actor that created the item.
 	CreatedBy *string `json:"created_by,omitempty"`
+
+	// ExtraFields preserves protocol-specific fields for item types that AxonHub
+	// does not interpret structurally.
+	ExtraFields map[string]json.RawMessage `json:"-"`
 }
 
 func (item *Item) UnmarshalJSON(data []byte) error {
 	type itemAlias Item
+
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawFields); err != nil {
+		return err
+	}
+
+	aliasFields := make(map[string]json.RawMessage, len(rawFields))
+	for key, raw := range rawFields {
+		switch key {
+		case "arguments", "output", "action":
+			continue
+		default:
+			aliasFields[key] = raw
+		}
+	}
+	aliasData, err := json.Marshal(aliasFields)
+	if err != nil {
+		return err
+	}
+
 	raw := struct {
 		itemAlias
 		Arguments json.RawMessage `json:"arguments"`
 	}{}
 
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(aliasData, &raw); err != nil {
 		return err
 	}
 
 	*item = Item(raw.itemAlias)
+	item.ExtraFields = responseItemExtraFields(rawFields, item.Type)
+
+	if rawOutput, ok := rawFields["output"]; ok && len(rawOutput) > 0 && !bytes.Equal(rawOutput, []byte("null")) {
+		var output Input
+		if err := json.Unmarshal(rawOutput, &output); err == nil {
+			item.Output = &output
+			delete(item.ExtraFields, "output")
+		}
+	}
+
+	if rawAction, ok := rawFields["action"]; ok && len(rawAction) > 0 && !bytes.Equal(rawAction, []byte("null")) {
+		switch item.Type {
+		case "image_generation_call", "web_search_call":
+			var action ItemAction
+			if err := json.Unmarshal(rawAction, &action); err == nil {
+				item.Action = &action
+				delete(item.ExtraFields, "action")
+			}
+		}
+	}
+
+	raw.Arguments = rawFields["arguments"]
 	if len(raw.Arguments) == 0 || bytes.Equal(raw.Arguments, []byte("null")) {
 		return nil
 	}
@@ -619,6 +665,37 @@ func (item *Item) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func responseItemExtraFields(rawFields map[string]json.RawMessage, itemType string) map[string]json.RawMessage {
+	if len(rawFields) == 0 || !isResponsePassthroughOutputItem(itemType) {
+		return nil
+	}
+
+	extra := make(map[string]json.RawMessage)
+	for key, raw := range rawFields {
+		if isKnownResponseItemField(key) {
+			continue
+		}
+		extra[key] = cloneRaw(raw)
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+
+	return extra
+}
+
+func isKnownResponseItemField(field string) bool {
+	switch field {
+	case "id", "type", "annotations", "role", "content", "status", "image_url", "detail",
+		"text", "background", "output_format", "quality", "size", "result", "call_id",
+		"name", "namespace", "arguments", "input", "output", "summary", "reasoning_content",
+		"encrypted_content", "action", "created_by":
+		return true
+	default:
+		return false
+	}
+}
+
 // MarshalJSON omits summary for non-reasoning items and forces an empty array for reasoning items.
 func (item Item) MarshalJSON() ([]byte, error) {
 	type itemAlias Item
@@ -630,7 +707,7 @@ func (item Item) MarshalJSON() ([]byte, error) {
 			Arguments string `json:"arguments"`
 		}
 
-		return json.Marshal(functionCallItem{
+		return marshalResponseItemWithExtra(item.ExtraFields, functionCallItem{
 			itemAlias: itemAlias(item),
 			Arguments: item.Arguments,
 		})
@@ -648,7 +725,7 @@ func (item Item) MarshalJSON() ([]byte, error) {
 			inputStr = *item.Input
 		}
 
-		return json.Marshal(customToolCallItem{
+		return marshalResponseItemWithExtra(item.ExtraFields, customToolCallItem{
 			itemAlias: itemAlias(item),
 			InputStr:  inputStr,
 		})
@@ -666,7 +743,7 @@ func (item Item) MarshalJSON() ([]byte, error) {
 			encContent = *item.EncryptedContent
 		}
 
-		return json.Marshal(compactionItem{
+		return marshalResponseItemWithExtra(item.ExtraFields, compactionItem{
 			itemAlias:        itemAlias(item),
 			EncryptedContent: encContent,
 		})
@@ -674,7 +751,7 @@ func (item Item) MarshalJSON() ([]byte, error) {
 
 	if item.Type != "reasoning" {
 		item.Summary = nil
-		return json.Marshal(itemAlias(item))
+		return marshalResponseItemWithExtra(item.ExtraFields, itemAlias(item))
 	}
 
 	// Ensure reasoning items always include summary, even if empty.
@@ -689,10 +766,34 @@ func (item Item) MarshalJSON() ([]byte, error) {
 		summary = []ReasoningSummary{}
 	}
 
-	return json.Marshal(reasoningItem{
+	return marshalResponseItemWithExtra(item.ExtraFields, reasoningItem{
 		itemAlias: itemAlias(item),
 		Summary:   summary,
 	})
+}
+
+func marshalResponseItemWithExtra(extra map[string]json.RawMessage, value any) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil || len(extra) == 0 {
+		return data, err
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, err
+	}
+
+	for key, raw := range extra {
+		if len(raw) == 0 {
+			continue
+		}
+		if _, exists := obj[key]; exists {
+			continue
+		}
+		obj[key] = cloneRaw(raw)
+	}
+
+	return json.Marshal(obj)
 }
 
 // isOutputMessageContent checks if Content.Items contains output message content items.

@@ -331,6 +331,40 @@ func TestOutboundTransformer_TransformRequest_ReplaysProviderRawInputItems(t *te
 	require.Equal(t, "message", message["type"])
 }
 
+func TestOutboundTransformer_TransformRequest_ReplaysProviderRawTopLevelAndToolChoice(t *testing.T) {
+	inbound := NewInboundTransformer()
+	inboundReq := &httpclient.Request{
+		Body: []byte(`{
+			"model": "gpt-5.6-sol",
+			"input": "hello",
+			"context_management": [{"type":"auto","retention_ratio":0.5}],
+			"prompt_cache_options": {"retention": "24h"},
+			"conversation": {"id": "conv_123"},
+			"tool_choice": {
+				"type": "allowed_tools",
+				"mode": "auto",
+				"tools": [{"type": "shell", "name": "exec"}]
+			}
+		}`),
+	}
+
+	llmReq, err := inbound.TransformRequest(context.Background(), inboundReq)
+	require.NoError(t, err)
+
+	outbound, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+
+	httpReq, err := outbound.TransformRequest(context.Background(), llmReq)
+	require.NoError(t, err)
+
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(httpReq.Body, &payload))
+	require.JSONEq(t, `[{"type":"auto","retention_ratio":0.5}]`, string(payload["context_management"]))
+	require.JSONEq(t, `{"retention":"24h"}`, string(payload["prompt_cache_options"]))
+	require.JSONEq(t, `{"id":"conv_123"}`, string(payload["conversation"]))
+	require.JSONEq(t, `{"type":"allowed_tools","mode":"auto","tools":[{"type":"shell","name":"exec"}]}`, string(payload["tool_choice"]))
+}
+
 func TestOutboundTransformer_TransformRequest_DoesNotReplayRawToolWhenToolsChanged(t *testing.T) {
 	inbound := NewInboundTransformer()
 	inboundReq := &httpclient.Request{

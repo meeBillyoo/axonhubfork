@@ -17,6 +17,7 @@ type OpenAIResponsesRequestExtensions struct {
 	ToolSignatures []string                     `json:"-"`
 	RawToolChoice  json.RawMessage              `json:"-"`
 	RawInputItems  []OpenAIResponsesRawFragment `json:"-"`
+	RawTopLevel    map[string]json.RawMessage   `json:"-"`
 }
 
 type OpenAIResponsesRawFragment struct {
@@ -57,6 +58,7 @@ func CloneProviderExtensions(src *ProviderExtensions) *ProviderExtensions {
 				ToolSignatures: append([]string(nil), src.OpenAIResponses.Request.ToolSignatures...),
 				RawToolChoice:  cloneRawMessage(src.OpenAIResponses.Request.RawToolChoice),
 				RawInputItems:  cloneOpenAIResponsesRawFragments(src.OpenAIResponses.Request.RawInputItems),
+				RawTopLevel:    cloneRawMessageMap(src.OpenAIResponses.Request.RawTopLevel),
 			}
 		}
 	}
@@ -84,4 +86,17 @@ func cloneRawMessage(src json.RawMessage) json.RawMessage {
 	}
 
 	return append(json.RawMessage(nil), src...)
+}
+
+func cloneRawMessageMap(src map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make(map[string]json.RawMessage, len(src))
+	for key, raw := range src {
+		out[key] = cloneRawMessage(raw)
+	}
+
+	return out
 }

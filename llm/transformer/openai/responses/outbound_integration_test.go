@@ -570,3 +570,54 @@ func TestResponsesTransformer_ToolSearchCallItem_RoundTripIntegration(t *testing
 	require.Equal(t, "completed", first.Get("status").String())
 	require.Equal(t, "message", output.Array()[1].Get("type").String())
 }
+
+func TestResponsesTransformer_UnknownCodexOutputItem_RoundTripIntegration(t *testing.T) {
+	outbound, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+
+	inbound := NewInboundTransformer()
+
+	responseData := []byte(`{
+		"object":"response",
+		"id":"resp_mcp_round_trip",
+		"created_at":1784000001,
+		"model":"gpt-5.6-sol",
+		"status":"completed",
+		"output":[
+			{
+				"id":"mcp_1",
+				"type":"mcp_call",
+				"status":"completed",
+				"call_id":"call_mcp_1",
+				"server_label":"repo",
+				"name":"read_thread",
+				"arguments":"{\"thread_id\":\"abc\"}",
+				"output":"{\"ok\":true}",
+				"approval_request_id":"apr_1"
+			},
+			{
+				"id":"msg_mcp_round_trip",
+				"type":"message",
+				"status":"completed",
+				"role":"assistant",
+				"content":[{"type":"output_text","text":"done"}]
+			}
+		]
+	}`)
+
+	httpResp := &httpclient.Response{StatusCode: http.StatusOK, Body: responseData}
+	llmResp, err := outbound.TransformResponse(t.Context(), httpResp)
+	require.NoError(t, err)
+	require.Len(t, getResponsePassthroughOutputItemsFromMetadata(llmResp.TransformerMetadata), 1)
+
+	roundTripResp, err := inbound.TransformResponse(t.Context(), llmResp)
+	require.NoError(t, err)
+
+	root := gjson.ParseBytes(roundTripResp.Body)
+	first := root.Get("output.0")
+	require.Equal(t, "mcp_call", first.Get("type").String())
+	require.Equal(t, "repo", first.Get("server_label").String())
+	require.Equal(t, "apr_1", first.Get("approval_request_id").String())
+	require.Equal(t, `{"ok":true}`, first.Get("output").String())
+	require.Equal(t, "message", root.Get("output.1.type").String())
+}

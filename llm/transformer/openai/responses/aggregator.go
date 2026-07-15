@@ -47,6 +47,9 @@ type aggregatedItem struct {
 	Arguments        *strings.Builder
 	EncryptedContent *string
 	Action           *ItemAction
+	ExtraFields      map[string]json.RawMessage
+	Output           *Input
+	CreatedBy        *string
 
 	// For custom_tool_call type
 	Input *string
@@ -59,6 +62,32 @@ type aggregatedItem struct {
 
 	// For reasoning type
 	SummaryParts map[int]*aggregatedSummaryPart
+}
+
+func mergeAggregatedItemExtraFields(item *aggregatedItem, extra map[string]json.RawMessage) {
+	if item == nil || len(extra) == 0 {
+		return
+	}
+
+	if item.ExtraFields == nil {
+		item.ExtraFields = make(map[string]json.RawMessage, len(extra))
+	}
+	for key, raw := range extra {
+		item.ExtraFields[key] = cloneRaw(raw)
+	}
+}
+
+func cloneAggregatedItemExtraFields(src map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make(map[string]json.RawMessage, len(src))
+	for key, raw := range src {
+		out[key] = cloneRaw(raw)
+	}
+
+	return out
 }
 
 type aggregatedSummaryPart struct {
@@ -78,6 +107,7 @@ func newAggregatedItem() *aggregatedItem {
 	return &aggregatedItem{
 		Arguments:    &strings.Builder{},
 		SummaryParts: make(map[int]*aggregatedSummaryPart),
+		ExtraFields:  make(map[string]json.RawMessage),
 	}
 }
 
@@ -267,7 +297,10 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 			item.Arguments.WriteString(ev.Item.Arguments)
 			item.EncryptedContent = ev.Item.EncryptedContent
 			item.Input = ev.Item.Input
+			item.Output = ev.Item.Output
+			item.CreatedBy = ev.Item.CreatedBy
 			item.Action = ev.Item.Action
+			mergeAggregatedItemExtraFields(item, ev.Item.ExtraFields)
 
 			if len(ev.Item.Summary) > 0 {
 				for idx, s := range ev.Item.Summary {
@@ -539,6 +572,14 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 					item.Input = ev.Item.Input
 				}
 
+				if ev.Item.Output != nil {
+					item.Output = ev.Item.Output
+				}
+
+				if ev.Item.CreatedBy != nil {
+					item.CreatedBy = ev.Item.CreatedBy
+				}
+
 				if ev.Item.Result != nil {
 					item.Result = ev.Item.Result
 				}
@@ -546,6 +587,7 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 				if ev.Item.Action != nil {
 					item.Action = ev.Item.Action
 				}
+				mergeAggregatedItemExtraFields(item, ev.Item.ExtraFields)
 
 				if item.ID != "" {
 					a.outputItemsByID[item.ID] = item
@@ -748,15 +790,27 @@ func (a *streamAggregator) buildResponse() *Response {
 					Name:      item.Name,
 					Namespace: item.Namespace,
 					Arguments: item.Arguments.String(),
+					ExtraFields: cloneAggregatedItemExtraFields(
+						item.ExtraFields,
+					),
 				})
 
 			default:
-				// Generic item
 				output = append(output, Item{
-					ID:     item.ID,
-					Type:   item.Type,
-					Status: lo.ToPtr(item.Status),
-					Role:   item.Role,
+					ID:          item.ID,
+					Type:        item.Type,
+					Status:      lo.ToPtr(item.Status),
+					Role:        item.Role,
+					CallID:      item.CallID,
+					Name:        item.Name,
+					Namespace:   item.Namespace,
+					Arguments:   item.Arguments.String(),
+					Input:       item.Input,
+					Output:      item.Output,
+					Result:      item.Result,
+					Action:      item.Action,
+					CreatedBy:   item.CreatedBy,
+					ExtraFields: cloneAggregatedItemExtraFields(item.ExtraFields),
 				})
 			}
 		}

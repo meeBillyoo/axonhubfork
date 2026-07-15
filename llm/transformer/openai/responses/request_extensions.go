@@ -17,9 +17,11 @@ func attachOpenAIResponsesRequestExtensions(chatReq *llm.Request, req *Request, 
 		ToolSignatures: buildRepresentedToolSignatures(req.Tools),
 		RawToolChoice:  rawUnsupportedToolChoice(req.ToolChoice, raw.ToolChoice),
 		RawInputItems:  buildRawOnlyInputFragments(req.Input, raw.InputItems),
+		RawTopLevel:    rawUnsupportedTopLevel(raw.TopLevel),
 	}
 
-	if len(requestExt.RawTools) == 0 && len(requestExt.RawToolChoice) == 0 && len(requestExt.RawInputItems) == 0 {
+	if len(requestExt.RawTools) == 0 && len(requestExt.RawToolChoice) == 0 &&
+		len(requestExt.RawInputItems) == 0 && len(requestExt.RawTopLevel) == 0 {
 		return
 	}
 
@@ -34,6 +36,7 @@ type rawRequestFragments struct {
 	Tools      []json.RawMessage
 	ToolChoice json.RawMessage
 	InputItems []json.RawMessage
+	TopLevel   map[string]json.RawMessage
 }
 
 func parseRawRequestFragments(rawBody []byte) rawRequestFragments {
@@ -59,7 +62,17 @@ func parseRawRequestFragments(rawBody []byte) rawRequestFragments {
 		Tools:      raw.Tools,
 		ToolChoice: raw.ToolChoice,
 		InputItems: inputItems,
+		TopLevel:   rawTopLevelFragments(rawBody),
 	}
+}
+
+func rawTopLevelFragments(rawBody []byte) map[string]json.RawMessage {
+	var obj map[string]json.RawMessage
+	if len(rawBody) == 0 || json.Unmarshal(rawBody, &obj) != nil {
+		return nil
+	}
+
+	return obj
 }
 
 func buildRepresentedToolSignatures(tools []Tool) []string {
@@ -123,11 +136,66 @@ func rawUnsupportedToolChoice(choice *ToolChoice, rawChoice json.RawMessage) jso
 		return nil
 	}
 
+	var stringChoice string
+	if json.Unmarshal(rawChoice, &stringChoice) == nil {
+		return nil
+	}
+
 	if len(choice.Tools) > 0 {
 		return cloneRaw(rawChoice)
 	}
 
+	var rawObj map[string]json.RawMessage
+	if json.Unmarshal(rawChoice, &rawObj) == nil {
+		for key := range rawObj {
+			if !isStructurallyRepresentedToolChoiceField(key) {
+				return cloneRaw(rawChoice)
+			}
+		}
+	}
+
 	return nil
+}
+
+func isStructurallyRepresentedToolChoiceField(field string) bool {
+	switch field {
+	case "mode", "type", "name":
+		return true
+	default:
+		return false
+	}
+}
+
+func rawUnsupportedTopLevel(rawFields map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(rawFields) == 0 {
+		return nil
+	}
+
+	result := make(map[string]json.RawMessage)
+	for key, raw := range rawFields {
+		if len(raw) == 0 || isStructurallyRepresentedRequestField(key) {
+			continue
+		}
+		result[key] = cloneRaw(raw)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
+}
+
+func isStructurallyRepresentedRequestField(field string) bool {
+	switch field {
+	case "model", "instructions", "temperature", "input", "tools", "parallel_tool_calls",
+		"background", "stream", "store", "service_tier", "safety_identifier", "user",
+		"metadata", "max_output_tokens", "max_tool_calls", "text", "include",
+		"previous_response_id", "prompt_cache_key", "prompt_cache_retention", "reasoning",
+		"stream_options", "tool_choice", "truncation", "top_logprobs", "top_p":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildRawOnlyInputFragments(input Input, rawItems []json.RawMessage) []llm.OpenAIResponsesRawFragment {
@@ -207,6 +275,16 @@ func marshalRequestPayload(payload Request, llmReq *llm.Request) ([]byte, error)
 			return nil, err
 		}
 		obj["input"] = inputRaw
+	}
+
+	for key, raw := range requestExt.RawTopLevel {
+		if len(raw) == 0 {
+			continue
+		}
+		if _, exists := obj[key]; exists {
+			continue
+		}
+		obj[key] = cloneRaw(raw)
 	}
 
 	return json.Marshal(obj)
