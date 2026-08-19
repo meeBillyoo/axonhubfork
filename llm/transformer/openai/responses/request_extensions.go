@@ -310,7 +310,7 @@ func mergeRawOnlyInputItems(structuredRaw json.RawMessage, requestExt *llm.OpenA
 		if len(fragment.Raw) == 0 || fragment.OriginalIndex < 0 {
 			return nil, false
 		}
-		rawByIndex[fragment.OriginalIndex] = cloneRaw(fragment.Raw)
+		rawByIndex[fragment.OriginalIndex] = normalizeRawInputItem(fragment.Raw)
 	}
 
 	for i := 0; i < total; i++ {
@@ -330,6 +330,40 @@ func mergeRawOnlyInputItems(structuredRaw json.RawMessage, requestExt *llm.OpenA
 	}
 
 	return items, true
+}
+
+func normalizeRawInputItem(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var item map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return cloneRaw(raw)
+	}
+
+	var itemType string
+	if err := json.Unmarshal(item["type"], &itemType); err != nil || itemType != "tool_search_call" {
+		return cloneRaw(raw)
+	}
+
+	var arguments string
+	if err := json.Unmarshal(item["arguments"], &arguments); err != nil {
+		return cloneRaw(raw)
+	}
+
+	rawArguments, ok := rawJSONObjectArguments(arguments)
+	if !ok {
+		return cloneRaw(raw)
+	}
+
+	item["arguments"] = rawArguments
+	data, err := json.Marshal(item)
+	if err != nil {
+		return cloneRaw(raw)
+	}
+
+	return data
 }
 
 func mergeRawOnlyTools(structuredRaw json.RawMessage, requestExt *llm.OpenAIResponsesRequestExtensions) ([]json.RawMessage, bool) {

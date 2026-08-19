@@ -537,7 +537,8 @@ func TestResponsesTransformer_ToolSearchCallItem_RoundTripIntegration(t *testing
 			{
 				"id":"tsc_07b3eec892ec2d35016a55cfdd444881949b5cb05371b4e1a8",
 				"type":"tool_search_call",
-				"status":"completed"
+				"status":"completed",
+				"arguments":{"query":"agent_kb kb_search MCP tool","limit":10}
 			},
 			{
 				"id":"msg_tool_search_call_round_trip",
@@ -568,6 +569,8 @@ func TestResponsesTransformer_ToolSearchCallItem_RoundTripIntegration(t *testing
 	require.Equal(t, "tool_search_call", first.Get("type").String())
 	require.Equal(t, "tsc_07b3eec892ec2d35016a55cfdd444881949b5cb05371b4e1a8", first.Get("id").String())
 	require.Equal(t, "completed", first.Get("status").String())
+	require.Equal(t, "agent_kb kb_search MCP tool", first.Get("arguments.query").String())
+	require.Equal(t, int64(10), first.Get("arguments.limit").Int())
 	require.Equal(t, "message", output.Array()[1].Get("type").String())
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/internal/pkg/xjson"
@@ -713,6 +714,21 @@ func (item Item) MarshalJSON() ([]byte, error) {
 		})
 	}
 
+	if item.Type == "tool_search_call" {
+		if rawArguments, ok := rawJSONObjectArguments(item.Arguments); ok {
+			type toolSearchCallItem struct {
+				itemAlias
+
+				Arguments json.RawMessage `json:"arguments"`
+			}
+
+			return marshalResponseItemWithExtra(item.ExtraFields, toolSearchCallItem{
+				itemAlias: itemAlias(item),
+				Arguments: rawArguments,
+			})
+		}
+	}
+
 	if item.Type == "custom_tool_call" {
 		type customToolCallItem struct {
 			itemAlias
@@ -770,6 +786,23 @@ func (item Item) MarshalJSON() ([]byte, error) {
 		itemAlias: itemAlias(item),
 		Summary:   summary,
 	})
+}
+
+func rawJSONObjectArguments(arguments string) (json.RawMessage, bool) {
+	if strings.TrimSpace(arguments) == "" {
+		return nil, false
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(arguments), &object); err != nil {
+		return nil, false
+	}
+	if object == nil {
+		return nil, false
+	}
+
+	raw := json.RawMessage(arguments)
+	return raw, true
 }
 
 func marshalResponseItemWithExtra(extra map[string]json.RawMessage, value any) ([]byte, error) {

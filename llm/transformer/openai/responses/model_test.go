@@ -84,6 +84,46 @@ func TestItemMarshalJSON_ReasoningSummaryBehavior(t *testing.T) {
 	}
 }
 
+func TestItemMarshalJSON_ToolSearchCallArgumentsObject(t *testing.T) {
+	item := Item{
+		Type:      "tool_search_call",
+		CallID:    "call_search",
+		Arguments: `{"query":"image generation","limit":10}`,
+	}
+
+	data, err := json.Marshal(item)
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(data, &raw)
+	require.NoError(t, err)
+
+	arguments, ok := raw["arguments"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "image generation", arguments["query"])
+	require.Equal(t, float64(10), arguments["limit"])
+}
+
+func TestItemMarshalJSON_FunctionCallArgumentsRemainString(t *testing.T) {
+	item := Item{
+		Type:      "function_call",
+		CallID:    "call_fn",
+		Name:      "lookup",
+		Arguments: `{"location":"NYC"}`,
+	}
+
+	data, err := json.Marshal(item)
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(data, &raw)
+	require.NoError(t, err)
+
+	arguments, ok := raw["arguments"].(string)
+	require.True(t, ok)
+	require.Equal(t, `{"location":"NYC"}`, arguments)
+}
+
 func TestItemMarshalJSON_Compaction(t *testing.T) {
 	cases := []struct {
 		name     string
